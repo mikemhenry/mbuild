@@ -21,12 +21,13 @@ after which you can simply install without specifying the channels::
     `Anaconda scientific python distribution <http://continuum.io/downloads>`_
     to manage your numerical and scientific Python packages.
 
-Install an editable version from source
+Install an editable version from source using conda
 -------------------
 ::
 
     $ git clone https://github.com/mosdef-hub/mbuild
     $ cd mbuild
+    $ conda env create -n mbuild_source python=3.5 -f environment.yml
     $ pip install -e .
 
 To make your life easier, we recommend that you use a pre-packaged Python
