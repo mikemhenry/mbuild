@@ -6,11 +6,12 @@ import numpy as np
 
 from mbuild import Box
 from mbuild.utils.conversion import RB_to_OPLS
+from mbuild.utils.geometry import shift_coords
 
 __all__ = ['write_hoomdxml']
 
 
-def write_hoomdxml(structure, filename, ref_distance=1.0, ref_mass=1.0, 
+def write_hoomdxml(structure, filename, ref_distance=1.0, ref_mass=1.0,
                    ref_energy=1.0, rigid_bodies=None):
     """Output a HOOMD XML file.
 
@@ -77,6 +78,7 @@ def write_hoomdxml(structure, filename, ref_distance=1.0, ref_mass=1.0,
     if structure[0].type == '':
         forcefield = False
     xyz = np.array([[atom.xx, atom.xy, atom.xz] for atom in structure.atoms])
+    xyz = shift_coords(xyz, structure.box[:3])
 
     with open(filename, 'w') as xml_file:
         xml_file.write('<?xml version="1.2" encoding="UTF-8"?>\n')
