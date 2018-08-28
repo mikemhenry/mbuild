@@ -22,6 +22,7 @@ tolerance {0:.16f}
 filetype xyz
 output {1}
 seed {2}
+precision 0.01
 
 """
 PACKMOL_SOLUTE = """
