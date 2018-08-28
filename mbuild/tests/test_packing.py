@@ -38,7 +38,7 @@ class TestPacking(BaseTest):
 
     def test_fill_region(self, h2o):
         filled = mb.fill_region(h2o, n_compounds=50,
-                                region=[3, 2, 2, 4, 4, 3])
+                                region=[3, 2, 2, 4, 4, 3], overlap=0.02)
         assert filled.n_particles == 50 * 3
         assert filled.n_bonds == 50 * 2
         assert np.min(filled.xyz[:,0]) >= 3
