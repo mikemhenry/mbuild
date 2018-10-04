@@ -248,8 +248,10 @@ def _write_dihedral_information(xml_file, structure, ref_energy):
 
     """
 
-    unique_dihedral_types = set()
+    unique_dihedral_types = []
+    unique_dihedral_idx = set()
     xml_file.write('<dihedral>\n')
+    # I'm not goint to worry about supporting rb_torsions and opls at the same time
     for dihedral in structure.rb_torsions:
         t1, t2 = dihedral.atom1.type, dihedral.atom2.type,
         t3, t4 = dihedral.atom3.type, dihedral.atom4.type
@@ -260,18 +262,42 @@ def _write_dihedral_information(xml_file, structure, ref_energy):
         dihedral_type = (types_in_dihedral, dihedral.type.c0,
         dihedral.type.c1, dihedral.type.c2, dihedral.type.c3, dihedral.type.c4,
         dihedral.type.c5, dihedral.type.scee, dihedral.type.scnb)
-        unique_dihedral_types.add(dihedral_type)
+        if dihedral_type not in unique_dihedral_types:
+            unique_dihedral_types.append(dihedral_type)
         xml_file.write('{} {} {} {} {}\n'.format(
             dihedral_type[0], dihedral.atom1.idx, dihedral.atom2.idx,
             dihedral.atom3.idx, dihedral.atom4.idx))
+    for dihedral in structure.dihedrals:
+        t1, t2 = dihedral.atom1.type, dihedral.atom2.type,
+        t3, t4 = dihedral.atom3.type, dihedral.atom4.type
+        if [t2, t3] == sorted([t2, t3]):
+            types_in_dihedral = '-'.join((t1, t2, t3, t4))
+        else:
+            types_in_dihedral = '-'.join((t4, t3, t2, t1))
+        dihedral_type = (types_in_dihedral, dihedral.type.phi_k, dihedral.type.per, dihedral.type.phase)
+        dihedral_idx = (types_in_dihedral, dihedral.atom1.idx, dihedral.atom2.idx, dihedral.atom3.idx, dihedral.atom4.idx)
+        if dihedral_type not in unique_dihedral_types:
+            unique_dihedral_types.append(dihedral_type)
+        if dihedral_idx not in unique_dihedral_idx:
+            unique_dihedral_idx.add(dihedral_idx)
+    for dihedral_types, idx1, idx2, idx3, idx4 in unique_dihedral_idx:
+        xml_file.write('{} {} {} {} {}\n'.format(dihedral_types, idx1, idx2, idx3, idx4))
+
     xml_file.write('</dihedral>\n')
     xml_file.write('<dihedral_coeffs>\n')
-    xml_file.write('<!-- type k1 k2 k3 k4 -->\n')
-    for dihedral_type, c0, c1, c2, c3, c4, c5, scee, scnb in unique_dihedral_types:
-        opls_coeffs = RB_to_OPLS(c0, c1, c2, c3, c4, c5)
-        opls_coeffs /= ref_energy
-        xml_file.write('{} {:.5f} {:.5f} {:.5f} {:.5f}\n'.format(
-            dihedral_type, *opls_coeffs))
+    if structure.rb_torsions:
+        xml_file.write('<!-- type k1 k2 k3 k4 -->\n')
+        for dihedral_type, c0, c1, c2, c3, c4, c5, scee, scnb in unique_dihedral_types:
+            opls_coeffs = RB_to_OPLS(c0, c1, c2, c3, c4, c5)
+            opls_coeffs /= ref_energy
+            xml_file.write('{} {:.5f} {:.5f} {:.5f} {:.5f}\n'.format(
+                dihedral_type, *opls_coeffs))
+    if structure.dihedrals:
+        xml_file.write('<!-- type phi period phase -->\n')
+        for dihedral_type, phi_k, period, phase in unique_dihedral_types:
+            phi_k /= ref_energy
+            phase = np.deg2rad(phase)
+            xml_file.write('{} {} {} {}\n'.format(dihedral_type, phi_k, period, phase))
     xml_file.write('</dihedral_coeffs>\n')
 
 
