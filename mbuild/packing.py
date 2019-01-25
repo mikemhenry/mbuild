@@ -195,7 +195,7 @@ def fill_box(compound, n_compounds=None, box=None, density=None, overlap=0.2,
     for comp, m_compounds in zip(compound, n_compounds):
         for _ in range(m_compounds):
             filled.add(clone(comp))
-    filled.update_coordinates(filled_pdb)
+    filled.update_coordinates(filled_pdb, update_port_locations=True)
     filled.periodicity = np.asarray(box.lengths, dtype=np.float32)
     return filled
 
