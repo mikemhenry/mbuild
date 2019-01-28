@@ -94,6 +94,8 @@ def write_hoomdxml(structure, filename, ref_distance=1.0, ref_mass=1.0,
     with open(filename, 'w') as xml_file:
         xml_file.write('<?xml version="1.2" encoding="UTF-8"?>\n')
         xml_file.write('<hoomd_xml version="1.2">\n')
+        xml_file.write('<!-- ref_distance (nm) ref_mass (amu) ref_energy (kJ/mol) -->\n')
+        xml_file.write('<!-- {} {} {} -->\n'.format(ref_distance, ref_mass, ref_energy))
         xml_file.write('<configuration time_step="0">\n')
         _write_box_information(xml_file, structure, ref_distance)
         _write_particle_information(xml_file, structure, xyz, forcefield,
