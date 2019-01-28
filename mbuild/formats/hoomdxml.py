@@ -3,6 +3,7 @@ from copy import deepcopy
 from math import floor, radians
 
 import numpy as np
+import operator
 
 from mbuild import Box
 from mbuild.utils.conversion import RB_to_OPLS
@@ -87,6 +88,14 @@ def write_hoomdxml(structure, filename, ref_distance=1.0, ref_mass=1.0,
     forcefield = True
     if structure[0].type == '':
         forcefield = False
+    if auto_scale and forcefield:
+        ref_mass = max([atom.mass for atom in structure.atoms])
+        pair_coeffs = list(set((atom.type,
+                                atom.epsilon,
+                                atom.sigma) for atom in structure.atoms))
+        ref_energy = max(pair_coeffs, key=operator.itemgetter(1))[1]
+        ref_distance = max(pair_coeffs, key=operator.itemgetter(2))[2]
+
     xyz = np.array([[atom.xx, atom.xy, atom.xz] for atom in structure.atoms])
     if shift_coords:
         xyz = coord_shift(xyz, structure.box[:3])
