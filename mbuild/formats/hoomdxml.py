@@ -14,7 +14,8 @@ __all__ = ['write_hoomdxml']
 
 @breaking_change("See PR#463 on github")
 def write_hoomdxml(structure, filename, ref_distance=1.0, ref_mass=1.0,
-                   ref_energy=1.0, rigid_bodies=None, shift_coords=True):
+                   ref_energy=1.0, rigid_bodies=None, shift_coords=True,
+                   auto_scale=False):
     """Output a HOOMD XML file.
 
     Parameters
@@ -36,6 +37,9 @@ def write_hoomdxml(structure, filename, ref_distance=1.0, ref_mass=1.0,
         particle is not part of any rigid body.
     shift_coords : bool, optional, default=True
         Shift coordinates from (0, L) to (-L/2, L/2) if necessary.
+    auto_scale : bool, optional, default=False
+        Automatically use largest sigma value as ref_distance, largest mass value
+        as ref_mass and largest epsilon value as ref_energy.
 
     Notes
     -----
@@ -79,7 +83,7 @@ def write_hoomdxml(structure, filename, ref_distance=1.0, ref_mass=1.0,
 
     """
     ref_distance *= 10  # Parmed unit hack
-    ref_energy /= 4.184 # Parmed unit hack
+    ref_energy /= 4.184  # Parmed unit hack
     forcefield = True
     if structure[0].type == '':
         forcefield = False
