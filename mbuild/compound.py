@@ -39,7 +39,8 @@ def load(filename, relative_to_module=None, compound=None, coords_only=False,
     Files are read using the MDTraj package unless the `use_parmed` argument is
     specified as True. Please refer to http://mdtraj.org/1.8.0/load_functions.html
     for formats supported by MDTraj and https://parmed.github.io/ParmEd/html/
-    readwrite.html for formats supported by ParmEd.
+    readwrite.html for formats supported by ParmEd. SMILES and SDF files are read
+    using pybel.
 
     Parameters
     ----------
@@ -96,6 +97,16 @@ def load(filename, relative_to_module=None, compound=None, coords_only=False,
         else:
             compound = read_xyz(filename)
         return compound
+
+    # Handle the case of a sdf file, which must use pybel
+    elif extension.lower() == '.sdf':
+        pybel = import_('pybel')
+        pybel_molecule = next(pybel.readfile(filename=filename, format="sdf"))
+        tmp_dir = tempfile.mkdtemp()
+        temp_file = os.path.join(tmp_dir, 'smiles_to_mol2_intermediate.mol2')
+        pybel_molecule.write("MOL2", temp_file)
+        structure = pmd.load_file(temp_file, structure=True, **kwargs)
+        compound.from_parmed(structure, coords_only=coords_only)
 
     if use_parmed:
         warn(
@@ -1316,7 +1327,7 @@ class Compound(object):
         scale_torsions : float, optional, default=1
             Scales the torsional force constants (1 is completely on)
             For _energy_minimize_openmm
-            Note: Only Ryckaert-Bellemans style torsions are currently supported 
+            Note: Only Ryckaert-Bellemans style torsions are currently supported
         scale_nonbonded : float, optional, default=1
             Scales epsilon (1 is completely on)
             For _energy_minimize_openmm
@@ -1419,7 +1430,7 @@ class Compound(object):
         Parameters
         ----------
         forcefield_files : str or list of str, optional, default=None
-            Forcefield files to load 
+            Forcefield files to load
         forcefield_name : str, optional, default=None
             Apply a named forcefield to the output file using the `foyer`
             package, e.g. 'oplsaa'. Forcefields listed here:
