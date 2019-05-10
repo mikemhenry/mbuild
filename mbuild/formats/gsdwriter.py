@@ -107,7 +107,7 @@ def write_gsd(structure, filename, ref_distance=1.0, ref_mass=1.0,
     if write_special_pairs:
         _write_pair_information(gsd_file, structure, ff_params, forcefield)
     if structure.bonds:
-        _write_bond_information(gsd_file, structure, ff_params, forcefield)
+        _write_bond_information(gsd_file, structure, ff_params, forcefield, ref_distance, ref_energy)
     if structure.angles:
         _write_angle_information(gsd_file, structure, ff_params, forcefield)
     if structure.rb_torsions:
@@ -194,7 +194,7 @@ def _write_pair_information(gsd_file, structure, ff_params, forcefield):
     gsd_file.pairs.group = pairs
     gsd_file.pairs.N = len(pairs)
 
-def _write_bond_information(gsd_file, structure, ff_params, forcefield):
+def _write_bond_information(gsd_file, structure, ff_params, forcefield, ref_distance, ref_energy):
     """Write the bonds in the system.
 
     Parameters
@@ -209,15 +209,18 @@ def _write_bond_information(gsd_file, structure, ff_params, forcefield):
     gsd_file.bonds.N = len(structure.bonds)
 
     unique_bond_types = set()
+    _unique_bond_types = set()
     for bond in structure.bonds:
         t1, t2 = bond.atom1.type, bond.atom2.type
         if t1 == '' or t2 == '':
             t1, t2 = bond.atom1.name, bond.atom2.name
         t1, t2 = sorted([t1, t2], key=natural_sort)
         try:
+            _bond_type = ('-'.join((t1, t2)), bond.type.k, bond.type.req)
             bond_type = ('-'.join((t1, t2)))
+            _unique_bond_types.add(_bond_type)
         except AttributeError: # no forcefield applied, bond.type is None
-            bond_type = ('-'.join((t1, t2)), 0.0, 0.0)
+            bond_type = ('-'.join((t1, t2)))
         unique_bond_types.add(bond_type)
     unique_bond_types = sorted(list(unique_bond_types), key=natural_sort)
     gsd_file.bonds.types = unique_bond_types
@@ -238,6 +241,11 @@ def _write_bond_information(gsd_file, structure, ff_params, forcefield):
 
     gsd_file.bonds.typeid = bond_typeids
     gsd_file.bonds.group = bond_groups
+    print(_unique_bond_types)
+    ff_params["bond_coeffs"] = {}
+    for bond_type, k, req in _unique_bond_types:
+        ff_params["bond_coeffs"][bond_type] = {"k": k * 2.0 / ref_energy * ref_distance**2.0, "r0": req/ref_distance}
+
 
 def _write_angle_information(gsd_file, structure, ff_params, forcefield):
     """Write the angles in the system.
