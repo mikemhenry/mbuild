@@ -1,6 +1,14 @@
 from __future__ import division
 
+from collections import OrderedDict
+from copy import deepcopy
+from math import floor
+import re
+import json
+
 import numpy as np
+import operator
+from oset import oset as OrderedSet
 
 from mbuild.utils.io import import_
 from mbuild.utils.sorting import natural_sort
@@ -11,7 +19,7 @@ __all__ = ['write_gsd']
 
 def write_gsd(structure, filename, ref_distance=1.0, ref_mass=1.0,
               ref_energy=1.0, rigid_bodies=None, shift_coords=True,
-              write_special_pairs=True):
+              write_special_pairs=True, auto_scale=False):
     """Output a GSD file (HOOMD v2 default data format).
 
     Parameters
@@ -36,6 +44,9 @@ def write_gsd(structure, filename, ref_distance=1.0, ref_mass=1.0,
     write_special_pairs : bool, optional, default=True
         Writes out special pair information necessary to correctly use the OPLS fudged 1,4 interactions
         in HOOMD.
+    auto_scale : bool, optional, default=False
+        Automatically use largest sigma value as ref_distance, largest mass value
+        as ref_mass and largest epsilon value as ref_energy.
 
     Notes
     -----
@@ -74,22 +85,43 @@ def write_gsd(structure, filename, ref_distance=1.0, ref_mass=1.0,
 
         gsd_file.configuration.box = np.array([lx, ly, lz, xy, xz, yz])
 
+    forcefield = True
+    # create ff dict
+    print(structure[0].type)
+    ff_params = {}
+    if structure[0].type == '':
+        forcefield = False
+    if auto_scale and forcefield:
+        ref_mass = max([atom.mass for atom in structure.atoms])
+        pair_coeffs = list(set((atom.type,
+                                atom.epsilon,
+                                atom.sigma) for atom in structure.atoms))
+        ref_energy = max(pair_coeffs, key=operator.itemgetter(1))[1]
+        ref_distance = max(pair_coeffs, key=operator.itemgetter(2))[2]
+        ff_params["ref_units"] = {"ref_mass": ref_mass, "ref_energy": ref_energy, "ref_distance": ref_distance}
+
+
+
     _write_particle_information(gsd_file, structure, xyz, ref_distance,
-            ref_mass, ref_energy, rigid_bodies)
+            ref_mass, ref_energy, rigid_bodies, ff_params, forcefield)
     if write_special_pairs:
-        _write_pair_information(gsd_file, structure)
+        _write_pair_information(gsd_file, structure, ff_params, forcefield)
     if structure.bonds:
-        _write_bond_information(gsd_file, structure)
+        _write_bond_information(gsd_file, structure, ff_params, forcefield)
     if structure.angles:
-        _write_angle_information(gsd_file, structure)
+        _write_angle_information(gsd_file, structure, ff_params, forcefield)
     if structure.rb_torsions:
-        _write_dihedral_information(gsd_file, structure)
+        _write_dihedral_information(gsd_file, structure, ff_params, forcefield)
 
 
     gsd.hoomd.create(filename, gsd_file)
+    # write ff dict
+    if ff_params:
+        with open('ff_params.json', 'w') as outfile:
+            json.dump(ff_params, outfile, indent=2)
 
 def _write_particle_information(gsd_file, structure, xyz, ref_distance,
-        ref_mass, ref_energy, rigid_bodies):
+        ref_mass, ref_energy, rigid_bodies, ff_params, forcefield):
     """Write out the particle information.
 
     """
@@ -124,7 +156,18 @@ def _write_particle_information(gsd_file, structure, xyz, ref_distance,
         rigid_bodies = [-1 if body is None else body for body in rigid_bodies]
     gsd_file.particles.body = rigid_bodies
 
-def _write_pair_information(gsd_file, structure):
+    if forcefield:
+        pair_coeffs = list(set((atom.type,
+                                atom.epsilon,
+                                atom.sigma) for atom in structure.atoms))
+        pair_coeffs.sort(key=lambda pair_type: pair_type[0])
+        ff_params["pair_coeffs"] = {}
+        for param_set in pair_coeffs:
+            ff_params["pair_coeffs"][param_set[0]] = { "alpha": 1.0, "epsilon": param_set[1]/ref_energy, "r_cut": 2.5,
+                                                       "r_on": 2.5, "sigma": param_set[2]/ref_distance}
+
+
+def _write_pair_information(gsd_file, structure, ff_params, forcefield):
     """Write the special pairs in the system.
 
         Parameters
@@ -151,7 +194,7 @@ def _write_pair_information(gsd_file, structure):
     gsd_file.pairs.group = pairs
     gsd_file.pairs.N = len(pairs)
 
-def _write_bond_information(gsd_file, structure):
+def _write_bond_information(gsd_file, structure, ff_params, forcefield):
     """Write the bonds in the system.
 
     Parameters
@@ -196,7 +239,7 @@ def _write_bond_information(gsd_file, structure):
     gsd_file.bonds.typeid = bond_typeids
     gsd_file.bonds.group = bond_groups
 
-def _write_angle_information(gsd_file, structure):
+def _write_angle_information(gsd_file, structure, ff_params, forcefield):
     """Write the angles in the system.
 
     Parameters
@@ -232,7 +275,7 @@ def _write_angle_information(gsd_file, structure):
     gsd_file.angles.typeid = angle_typeids
     gsd_file.angles.group = angle_groups
 
-def _write_dihedral_information(gsd_file, structure):
+def _write_dihedral_information(gsd_file, structure, ff_params, forcefield):
     """Write the dihedrals in the system.
 
     Parameters
