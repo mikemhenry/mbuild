@@ -2,9 +2,10 @@ from __future__ import division
 
 from collections import OrderedDict
 from copy import deepcopy
-from math import floor, radians
+from math import floor, radians, sqrt
 import re
 import json
+from itertools import combinations_with_replacement
 
 import numpy as np
 import operator
@@ -88,7 +89,6 @@ def write_gsd(structure, filename, ref_distance=1.0, ref_mass=1.0,
 
     forcefield = True
     # create ff dict
-    print(structure[0].type)
     ff_params = {}
     if structure[0].type == '':
         forcefield = False
@@ -166,6 +166,11 @@ def _write_particle_information(gsd_file, structure, xyz, ref_distance,
         for param_set in pair_coeffs:
             ff_params["pair_coeffs"][param_set[0]] = { "alpha": 1.0, "epsilon": param_set[1]/ref_energy, "r_cut": 2.5,
                                                        "r_on": 2.5, "sigma": param_set[2]/ref_distance}
+        for A, B in combinations_with_replacement(pair_coeffs, 2):
+            print(A[0], B[0])
+            ff_params["pair_coeffs"]["{}-{}".format(A[0], B[0])] = { "alpha": 1.0, "epsilon":
+                                                                    sqrt(A[1]/ref_energy * B[1]/ref_energy), "r_cut": 2.5,
+                                                       "r_on": 2.5, "sigma": (A[2]/ref_distance + B[2]/ref_distance)/2}
 
 
 def _write_pair_information(gsd_file, structure, ff_params, forcefield):
@@ -242,7 +247,6 @@ def _write_bond_information(gsd_file, structure, ff_params, forcefield, ref_dist
 
     gsd_file.bonds.typeid = bond_typeids
     gsd_file.bonds.group = bond_groups
-    print(_unique_bond_types)
     ff_params["bond_coeffs"] = {}
     for bond_type, k, req in _unique_bond_types:
         ff_params["bond_coeffs"][bond_type] = {"k": k * 2.0 / ref_energy * ref_distance**2.0, "r0": req/ref_distance}
@@ -288,7 +292,6 @@ def _write_angle_information(gsd_file, structure, ff_params, forcefield, ref_ene
     gsd_file.angles.group = angle_groups
 
     ff_params["angle_coeffs"] = {}
-    print(unique_angle_types)
     for angle_type, k, teq in _unique_angle_types:
         ff_params["angle_coeffs"][angle_type] = {"k": k * 2.0 / ref_energy, "t0": radians(teq)}
 
