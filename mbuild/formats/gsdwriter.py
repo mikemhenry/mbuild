@@ -2,7 +2,7 @@ from __future__ import division
 
 from collections import OrderedDict
 from copy import deepcopy
-from math import floor
+from math import floor, radians
 import re
 import json
 
@@ -14,6 +14,7 @@ from mbuild import Box
 from mbuild.utils.io import import_
 from mbuild.utils.sorting import natural_sort
 from mbuild.utils.geometry import coord_shift
+from mbuild.utils.conversion import RB_to_OPLS
 
 __all__ = ['write_gsd']
 
@@ -110,9 +111,9 @@ def write_gsd(structure, filename, ref_distance=1.0, ref_mass=1.0,
     if structure.bonds:
         _write_bond_information(gsd_file, structure, ff_params, forcefield, ref_distance, ref_energy)
     if structure.angles:
-        _write_angle_information(gsd_file, structure, ff_params, forcefield)
+        _write_angle_information(gsd_file, structure, ff_params, forcefield, ref_energy)
     if structure.rb_torsions:
-        _write_dihedral_information(gsd_file, structure, ff_params, forcefield)
+        _write_dihedral_information(gsd_file, structure, ff_params, forcefield, ref_energy)
 
 
     gsd.hoomd.create(filename, gsd_file)
@@ -248,7 +249,7 @@ def _write_bond_information(gsd_file, structure, ff_params, forcefield, ref_dist
         ff_params["bond_coeffs"][bond_type] = {"k": k * 2.0 / ref_energy * ref_distance**2.0, "r0": req/ref_distance}
 
 
-def _write_angle_information(gsd_file, structure, ff_params, forcefield):
+def _write_angle_information(gsd_file, structure, ff_params, forcefield, ref_energy):
     """Write the angles in the system.
 
     Parameters
@@ -263,6 +264,7 @@ def _write_angle_information(gsd_file, structure, ff_params, forcefield):
     gsd_file.angles.N = len(structure.angles)
 
     unique_angle_types = set()
+    _unique_angle_types = set()
     for angle in structure.angles:
         t1, t2, t3 = angle.atom1.type, angle.atom2.type, angle.atom3.type
         t1, t3 = sorted([t1, t3], key=natural_sort)
@@ -277,6 +279,8 @@ def _write_angle_information(gsd_file, structure, ff_params, forcefield):
         t1, t2, t3 = angle.atom1.type, angle.atom2.type, angle.atom3.type
         t1, t3 = sorted([t1, t3], key=natural_sort)
         angle_type = ('-'.join((t1, t2, t3)))
+        _angle_type = ('-'.join((t1, t2, t3)), angle.type.k, angle.type.theteq)
+        _unique_angle_types.add(_angle_type)
         angle_typeids.append(unique_angle_types.index(angle_type))
         angle_groups.append((angle.atom1.idx, angle.atom2.idx,
                              angle.atom3.idx))
@@ -284,7 +288,13 @@ def _write_angle_information(gsd_file, structure, ff_params, forcefield):
     gsd_file.angles.typeid = angle_typeids
     gsd_file.angles.group = angle_groups
 
-def _write_dihedral_information(gsd_file, structure, ff_params, forcefield):
+    ff_params["angle_coeffs"] = {}
+    print(unique_angle_types)
+    for angle_type, k, teq in _unique_angle_types:
+        ff_params["angle_coeffs"][angle_type] = {"k": k * 2.0 / ref_energy, "t0": radians(teq)}
+
+
+def _write_dihedral_information(gsd_file, structure, ff_params, forcefield, ref_energy):
     """Write the dihedrals in the system.
 
     Parameters
@@ -299,6 +309,7 @@ def _write_dihedral_information(gsd_file, structure, ff_params, forcefield):
     gsd_file.dihedrals.N = len(structure.rb_torsions)
 
     unique_dihedral_types = set()
+    _unique_dihedral_types = set()
     for dihedral in structure.rb_torsions:
         t1, t2 = dihedral.atom1.type, dihedral.atom2.type
         t3, t4 = dihedral.atom3.type, dihedral.atom4.type
@@ -306,6 +317,10 @@ def _write_dihedral_information(gsd_file, structure, ff_params, forcefield):
             dihedral_type = ('-'.join((t1, t2, t3, t4)))
         else:
             dihedral_type = ('-'.join((t4, t3, t2, t1)))
+        _dihedral_type = (dihedral_type, dihedral.type.c0,
+        dihedral.type.c1, dihedral.type.c2, dihedral.type.c3, dihedral.type.c4,
+        dihedral.type.c5, dihedral.type.scee, dihedral.type.scnb)
+        _unique_dihedral_types.add(_dihedral_type)
         unique_dihedral_types.add(dihedral_type)
     unique_dihedral_types = sorted(list(unique_dihedral_types), key=natural_sort)
     gsd_file.dihedrals.types = unique_dihedral_types
@@ -325,3 +340,10 @@ def _write_dihedral_information(gsd_file, structure, ff_params, forcefield):
 
     gsd_file.dihedrals.typeid = dihedral_typeids
     gsd_file.dihedrals.group = dihedral_groups
+
+    ff_params["dihedral_coeffs"] = {}
+    for dihedral_type, c0, c1, c2, c3, c4, c5, scee, scnb in _unique_dihedral_types:
+        opls_coeffs = RB_to_OPLS(c0, c1, c2, c3, c4, c5)
+        opls_coeffs /= ref_energy
+        k1, k2, k3, k4 = opls_coeffs
+        ff_params["dihedral_coeffs"][dihedral_type] = {"k1": k1, "k2": k2, "k3": k3, "k4": k4}
