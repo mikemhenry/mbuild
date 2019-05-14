@@ -90,6 +90,8 @@ def write_gsd(structure, filename, ref_distance=1.0, ref_mass=1.0,
     forcefield = True
     # create ff dict
     ff_params = {}
+    ff_params["user"] = {}
+
     if structure[0].type == '':
         forcefield = False
     if auto_scale and forcefield:
@@ -99,7 +101,7 @@ def write_gsd(structure, filename, ref_distance=1.0, ref_mass=1.0,
                                 atom.sigma) for atom in structure.atoms))
         ref_energy = max(pair_coeffs, key=operator.itemgetter(1))[1]
         ref_distance = max(pair_coeffs, key=operator.itemgetter(2))[2]
-        ff_params["ref_units"] = {"ref_mass": ref_mass, "ref_energy": ref_energy, "ref_distance": ref_distance}
+        ff_params["user"]["ref_units"] = {"ref_mass": ref_mass, "ref_energy": ref_energy, "ref_distance": ref_distance}
 
 
 
@@ -158,19 +160,30 @@ def _write_particle_information(gsd_file, structure, xyz, ref_distance,
     gsd_file.particles.body = rigid_bodies
 
     if forcefield:
+        R_CUT = 2.5
+        R_ON = 2.5
         pair_coeffs = list(set((atom.type,
                                 atom.epsilon,
                                 atom.sigma) for atom in structure.atoms))
         pair_coeffs.sort(key=lambda pair_type: pair_type[0])
-        ff_params["pair_coeffs"] = {}
+        ff_params["user"]["pair_coeffs"] = {}
+        # We will need these modules
+        ff_params["modules"] = ["hoomd", "md"]
+        ff_params["objects"] = {"hoomd.md.nlist.cell": {}}
         for param_set in pair_coeffs:
-            ff_params["pair_coeffs"][param_set[0]] = { "alpha": 1.0, "epsilon": param_set[1]/ref_energy, "r_cut": 2.5,
-                                                       "r_on": 2.5, "sigma": param_set[2]/ref_distance}
-        ff_params["pair_coeffs_parameters"] = {}
+            ff_params["user"]["pair_coeffs"][param_set[0]] = { "alpha": 1.0, "epsilon": param_set[1]/ref_energy, "r_cut": R_CUT,
+                                                       "r_on": R_ON, "sigma": param_set[2]/ref_distance}
+        ff_params["objects"] = {"hoomd.md.pair.lj": {"arguments": {
+                    "nlist": "Object #0",
+                    "r_cut": R_CUT
+                }}}
+        ff_params["objects"]["hoomd.md.pair.lj"]["tracked_fields"] = {}
+        ff_params["objects"]["hoomd.md.pair.lj"]["tracked_fields"]["log"] = True
+        ff_params["objects"]["hoomd.md.pair.lj"]["tracked_fields"]["parameters"] = {}
         for A, B in combinations_with_replacement(pair_coeffs, 2):
-            ff_params["pair_coeffs_parameters"]["{}-{}".format(A[0], B[0])] = { "alpha": 1.0, "epsilon":
-                                                                    sqrt(A[1]/ref_energy * B[1]/ref_energy), "r_cut": 2.5,
-                                                       "r_on": 2.5, "sigma": (A[2]/ref_distance + B[2]/ref_distance)/2}
+            ff_params["objects"]["hoomd.md.pair.lj"]["tracked_fields"]["parameters"]["{},{}".format(A[0], B[0])] = { "alpha": 1.0, "epsilon":
+                                                                    sqrt(A[1]/ref_energy * B[1]/ref_energy), "r_cut": R_CUT,
+                                                       "r_on": R_ON, "sigma": (A[2]/ref_distance + B[2]/ref_distance)/2}
 
 
 def _write_pair_information(gsd_file, structure, ff_params, forcefield):
