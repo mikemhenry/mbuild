@@ -166,9 +166,9 @@ def _write_particle_information(gsd_file, structure, xyz, ref_distance,
         for param_set in pair_coeffs:
             ff_params["pair_coeffs"][param_set[0]] = { "alpha": 1.0, "epsilon": param_set[1]/ref_energy, "r_cut": 2.5,
                                                        "r_on": 2.5, "sigma": param_set[2]/ref_distance}
+        ff_params["pair_coeffs_parameters"] = {}
         for A, B in combinations_with_replacement(pair_coeffs, 2):
-            print(A[0], B[0])
-            ff_params["pair_coeffs"]["{}-{}".format(A[0], B[0])] = { "alpha": 1.0, "epsilon":
+            ff_params["pair_coeffs_parameters"]["{}-{}".format(A[0], B[0])] = { "alpha": 1.0, "epsilon":
                                                                     sqrt(A[1]/ref_energy * B[1]/ref_energy), "r_cut": 2.5,
                                                        "r_on": 2.5, "sigma": (A[2]/ref_distance + B[2]/ref_distance)/2}
 
