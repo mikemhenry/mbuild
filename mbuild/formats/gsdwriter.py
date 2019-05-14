@@ -1,27 +1,36 @@
 from __future__ import division
 
+import json
+import operator
+import re
 from collections import OrderedDict
 from copy import deepcopy
-from math import floor, radians, sqrt
-import re
-import json
 from itertools import combinations_with_replacement
+from math import floor, radians, sqrt
 
 import numpy as np
-import operator
 from oset import oset as OrderedSet
 
+from mbuild import Box
+from mbuild.utils.conversion import RB_to_OPLS
+from mbuild.utils.geometry import coord_shift
 from mbuild.utils.io import import_
 from mbuild.utils.sorting import natural_sort
-from mbuild.utils.geometry import coord_shift
-from mbuild.utils.conversion import RB_to_OPLS
 
-__all__ = ['write_gsd']
+__all__ = ["write_gsd"]
 
 
-def write_gsd(structure, filename, ref_distance=1.0, ref_mass=1.0,
-              ref_energy=1.0, rigid_bodies=None, shift_coords=True,
-              write_special_pairs=True, auto_scale=False):
+def write_gsd(
+    structure,
+    filename,
+    ref_distance=1.0,
+    ref_mass=1.0,
+    ref_energy=1.0,
+    rigid_bodies=None,
+    shift_coords=True,
+    write_special_pairs=True,
+    auto_scale=False,
+):
     """Output a GSD file (HOOMD v2 default data format).
 
     Parameters
@@ -58,7 +67,7 @@ def write_gsd(structure, filename, ref_distance=1.0, ref_mass=1.0,
 
     """
 
-    import_('gsd')
+    import_("gsd")
     import gsd.hoomd
 
     xyz = np.array([[atom.xx, atom.xy, atom.xz] for atom in structure.atoms])
@@ -72,8 +81,9 @@ def write_gsd(structure, filename, ref_distance=1.0, ref_mass=1.0,
 
     # Write box information
     if np.allclose(structure.box[3:6], np.array([90, 90, 90])):
-        gsd_file.configuration.box = np.hstack((structure.box[:3] / ref_distance,
-                                                np.zeros(3)))
+        gsd_file.configuration.box = np.hstack(
+            (structure.box[:3] / ref_distance, np.zeros(3))
+        )
     else:
         a, b, c = structure.box[0:3] / ref_distance
         alpha, beta, gamma = np.radians(structure.box[3:6])
@@ -81,9 +91,9 @@ def write_gsd(structure, filename, ref_distance=1.0, ref_mass=1.0,
         lx = a
         xy = b * np.cos(gamma)
         xz = c * np.cos(beta)
-        ly = np.sqrt(b**2 - xy**2)
-        yz = (b*c*np.cos(alpha) - xy*xz) / ly
-        lz = np.sqrt(c**2 - xz**2 - yz**2)
+        ly = np.sqrt(b ** 2 - xy ** 2)
+        yz = (b * c * np.cos(alpha) - xy * xz) / ly
+        lz = np.sqrt(c ** 2 - xz ** 2 - yz ** 2)
 
         gsd_file.configuration.box = np.array([lx, ly, lz, xy, xz, yz])
 
@@ -92,39 +102,63 @@ def write_gsd(structure, filename, ref_distance=1.0, ref_mass=1.0,
     ff_params = {}
     ff_params["user"] = {}
 
-    if structure[0].type == '':
+    if structure[0].type == "":
         forcefield = False
     if auto_scale and forcefield:
         ref_mass = max([atom.mass for atom in structure.atoms])
-        pair_coeffs = list(set((atom.type,
-                                atom.epsilon,
-                                atom.sigma) for atom in structure.atoms))
+        pair_coeffs = list(
+            set((atom.type, atom.epsilon, atom.sigma) for atom in structure.atoms)
+        )
         ref_energy = max(pair_coeffs, key=operator.itemgetter(1))[1]
         ref_distance = max(pair_coeffs, key=operator.itemgetter(2))[2]
-        ff_params["user"]["ref_units"] = {"ref_mass": ref_mass, "ref_energy": ref_energy, "ref_distance": ref_distance}
+        ff_params["user"]["ref_units"] = {
+            "ref_mass": ref_mass,
+            "ref_energy": ref_energy,
+            "ref_distance": ref_distance,
+        }
 
-
-
-    _write_particle_information(gsd_file, structure, xyz, ref_distance,
-            ref_mass, ref_energy, rigid_bodies, ff_params, forcefield)
+    _write_particle_information(
+        gsd_file,
+        structure,
+        xyz,
+        ref_distance,
+        ref_mass,
+        ref_energy,
+        rigid_bodies,
+        ff_params,
+        forcefield,
+    )
     if write_special_pairs:
         _write_pair_information(gsd_file, structure, ff_params, forcefield)
     if structure.bonds:
-        _write_bond_information(gsd_file, structure, ff_params, forcefield, ref_distance, ref_energy)
+        _write_bond_information(
+            gsd_file, structure, ff_params, forcefield, ref_distance, ref_energy
+        )
     if structure.angles:
         _write_angle_information(gsd_file, structure, ff_params, forcefield, ref_energy)
     if structure.rb_torsions:
-        _write_dihedral_information(gsd_file, structure, ff_params, forcefield, ref_energy)
-
+        _write_dihedral_information(
+            gsd_file, structure, ff_params, forcefield, ref_energy
+        )
 
     gsd.hoomd.create(filename, gsd_file)
     # write ff dict
     if ff_params:
-        with open('ff_params.json', 'w') as outfile:
+        with open("ff_params.json", "w") as outfile:
             json.dump(ff_params, outfile, indent=2)
 
-def _write_particle_information(gsd_file, structure, xyz, ref_distance,
-        ref_mass, ref_energy, rigid_bodies, ff_params, forcefield):
+
+def _write_particle_information(
+    gsd_file,
+    structure,
+    xyz,
+    ref_distance,
+    ref_mass,
+    ref_energy,
+    rigid_bodies,
+    ff_params,
+    forcefield,
+):
     """Write out the particle information.
 
     """
@@ -132,8 +166,7 @@ def _write_particle_information(gsd_file, structure, xyz, ref_distance,
     gsd_file.particles.N = len(structure.atoms)
     gsd_file.particles.position = xyz / ref_distance
 
-    types = [atom.name if atom.type == '' else atom.type
-             for atom in structure.atoms]
+    types = [atom.name if atom.type == "" else atom.type for atom in structure.atoms]
 
     unique_types = list(set(types))
     unique_types.sort(key=natural_sort)
@@ -143,16 +176,16 @@ def _write_particle_information(gsd_file, structure, xyz, ref_distance,
     gsd_file.particles.typeid = typeids
 
     masses = np.array([atom.mass for atom in structure.atoms])
-    masses[masses==0] = 1.0
+    masses[masses == 0] = 1.0
     gsd_file.particles.mass = masses / ref_mass
 
     charges = np.array([atom.charge for atom in structure.atoms])
     e0 = 2.39725e-4
-    '''
+    """
     Permittivity of free space = 2.39725e-4 e^2/((kcal/mol)(angstrom)),
     where e is the elementary charge
-    '''
-    charge_factor = (4.0*np.pi*e0*ref_distance*ref_energy)**0.5
+    """
+    charge_factor = (4.0 * np.pi * e0 * ref_distance * ref_energy) ** 0.5
     gsd_file.particles.charge = charges / charge_factor
 
     if rigid_bodies:
@@ -162,28 +195,38 @@ def _write_particle_information(gsd_file, structure, xyz, ref_distance,
     if forcefield:
         R_CUT = 2.5
         R_ON = 2.5
-        pair_coeffs = list(set((atom.type,
-                                atom.epsilon,
-                                atom.sigma) for atom in structure.atoms))
+        pair_coeffs = list(
+            set((atom.type, atom.epsilon, atom.sigma) for atom in structure.atoms)
+        )
         pair_coeffs.sort(key=lambda pair_type: pair_type[0])
         ff_params["user"]["pair_coeffs"] = {}
         # We will need these modules
         ff_params["modules"] = ["hoomd", "md"]
         ff_params["objects"] = {"hoomd.md.nlist.cell": {}}
         for param_set in pair_coeffs:
-            ff_params["user"]["pair_coeffs"][param_set[0]] = { "alpha": 1.0, "epsilon": param_set[1]/ref_energy, "r_cut": R_CUT,
-                                                       "r_on": R_ON, "sigma": param_set[2]/ref_distance}
-        ff_params["objects"] = {"hoomd.md.pair.lj": {"arguments": {
-                    "nlist": "Object #0",
-                    "r_cut": R_CUT
-                }}}
+            ff_params["user"]["pair_coeffs"][param_set[0]] = {
+                "alpha": 1.0,
+                "epsilon": param_set[1] / ref_energy,
+                "r_cut": R_CUT,
+                "r_on": R_ON,
+                "sigma": param_set[2] / ref_distance,
+            }
+        ff_params["objects"] = {
+            "hoomd.md.pair.lj": {"arguments": {"nlist": "Object #0", "r_cut": R_CUT}}
+        }
         ff_params["objects"]["hoomd.md.pair.lj"]["tracked_fields"] = {}
         ff_params["objects"]["hoomd.md.pair.lj"]["tracked_fields"]["log"] = True
         ff_params["objects"]["hoomd.md.pair.lj"]["tracked_fields"]["parameters"] = {}
         for A, B in combinations_with_replacement(pair_coeffs, 2):
-            ff_params["objects"]["hoomd.md.pair.lj"]["tracked_fields"]["parameters"]["{},{}".format(A[0], B[0])] = { "alpha": 1.0, "epsilon":
-                                                                    sqrt(A[1]/ref_energy * B[1]/ref_energy), "r_cut": R_CUT,
-                                                       "r_on": R_ON, "sigma": (A[2]/ref_distance + B[2]/ref_distance)/2}
+            ff_params["objects"]["hoomd.md.pair.lj"]["tracked_fields"]["parameters"][
+                "{},{}".format(A[0], B[0])
+            ] = {
+                "alpha": 1.0,
+                "epsilon": sqrt(A[1] / ref_energy * B[1] / ref_energy),
+                "r_cut": R_CUT,
+                "r_on": R_ON,
+                "sigma": (A[2] / ref_distance + B[2] / ref_distance) / 2,
+            }
 
 
 def _write_pair_information(gsd_file, structure, ff_params, forcefield):
@@ -201,9 +244,9 @@ def _write_pair_information(gsd_file, structure, ff_params, forcefield):
     pairs = []
     for ai in structure.atoms:
         for aj in ai.dihedral_partners:
-            #make sure we don't double add
+            # make sure we don't double add
             if ai.idx > aj.idx:
-                ps = '-'.join(sorted([ai.type, aj.type], key=natural_sort))
+                ps = "-".join(sorted([ai.type, aj.type], key=natural_sort))
                 if ps not in pair_types:
                     pair_types.append(ps)
                 pair_typeid.append(pair_types.index(ps))
@@ -213,7 +256,10 @@ def _write_pair_information(gsd_file, structure, ff_params, forcefield):
     gsd_file.pairs.group = pairs
     gsd_file.pairs.N = len(pairs)
 
-def _write_bond_information(gsd_file, structure, ff_params, forcefield, ref_distance, ref_energy):
+
+def _write_bond_information(
+    gsd_file, structure, ff_params, forcefield, ref_distance, ref_energy
+):
     """Write the bonds in the system.
 
     Parameters
@@ -231,15 +277,15 @@ def _write_bond_information(gsd_file, structure, ff_params, forcefield, ref_dist
     _unique_bond_types = set()
     for bond in structure.bonds:
         t1, t2 = bond.atom1.type, bond.atom2.type
-        if t1 == '' or t2 == '':
+        if t1 == "" or t2 == "":
             t1, t2 = bond.atom1.name, bond.atom2.name
         t1, t2 = sorted([t1, t2], key=natural_sort)
         try:
-            _bond_type = ('-'.join((t1, t2)), bond.type.k, bond.type.req)
-            bond_type = ('-'.join((t1, t2)))
+            _bond_type = ("-".join((t1, t2)), bond.type.k, bond.type.req)
+            bond_type = "-".join((t1, t2))
             _unique_bond_types.add(_bond_type)
-        except AttributeError: # no forcefield applied, bond.type is None
-            bond_type = ('-'.join((t1, t2)))
+        except AttributeError:  # no forcefield applied, bond.type is None
+            bond_type = "-".join((t1, t2))
         unique_bond_types.add(bond_type)
     unique_bond_types = sorted(list(unique_bond_types), key=natural_sort)
     gsd_file.bonds.types = unique_bond_types
@@ -248,13 +294,13 @@ def _write_bond_information(gsd_file, structure, ff_params, forcefield, ref_dist
     bond_groups = []
     for bond in structure.bonds:
         t1, t2 = bond.atom1.type, bond.atom2.type
-        if t1 == '' or t2 == '':
+        if t1 == "" or t2 == "":
             t1, t2 = bond.atom1.name, bond.atom2.name
         t1, t2 = sorted([t1, t2], key=natural_sort)
         try:
-            bond_type = ('-'.join((t1, t2)))
-        except AttributeError: # no forcefield applied, bond.type is None
-            bond_type = ('-'.join((t1, t2)), 0.0, 0.0)
+            bond_type = "-".join((t1, t2))
+        except AttributeError:  # no forcefield applied, bond.type is None
+            bond_type = ("-".join((t1, t2)), 0.0, 0.0)
         bond_typeids.append(unique_bond_types.index(bond_type))
         bond_groups.append((bond.atom1.idx, bond.atom2.idx))
 
@@ -262,7 +308,10 @@ def _write_bond_information(gsd_file, structure, ff_params, forcefield, ref_dist
     gsd_file.bonds.group = bond_groups
     ff_params["bond_coeffs"] = {}
     for bond_type, k, req in _unique_bond_types:
-        ff_params["bond_coeffs"][bond_type] = {"k": k * 2.0 / ref_energy * ref_distance**2.0, "r0": req/ref_distance}
+        ff_params["bond_coeffs"][bond_type] = {
+            "k": k * 2.0 / ref_energy * ref_distance ** 2.0,
+            "r0": req / ref_distance,
+        }
 
 
 def _write_angle_information(gsd_file, structure, ff_params, forcefield, ref_energy):
@@ -284,7 +333,7 @@ def _write_angle_information(gsd_file, structure, ff_params, forcefield, ref_ene
     for angle in structure.angles:
         t1, t2, t3 = angle.atom1.type, angle.atom2.type, angle.atom3.type
         t1, t3 = sorted([t1, t3], key=natural_sort)
-        angle_type = ('-'.join((t1, t2, t3)))
+        angle_type = "-".join((t1, t2, t3))
         unique_angle_types.add(angle_type)
     unique_angle_types = sorted(list(unique_angle_types), key=natural_sort)
     gsd_file.angles.types = unique_angle_types
@@ -294,19 +343,21 @@ def _write_angle_information(gsd_file, structure, ff_params, forcefield, ref_ene
     for angle in structure.angles:
         t1, t2, t3 = angle.atom1.type, angle.atom2.type, angle.atom3.type
         t1, t3 = sorted([t1, t3], key=natural_sort)
-        angle_type = ('-'.join((t1, t2, t3)))
-        _angle_type = ('-'.join((t1, t2, t3)), angle.type.k, angle.type.theteq)
+        angle_type = "-".join((t1, t2, t3))
+        _angle_type = ("-".join((t1, t2, t3)), angle.type.k, angle.type.theteq)
         _unique_angle_types.add(_angle_type)
         angle_typeids.append(unique_angle_types.index(angle_type))
-        angle_groups.append((angle.atom1.idx, angle.atom2.idx,
-                             angle.atom3.idx))
+        angle_groups.append((angle.atom1.idx, angle.atom2.idx, angle.atom3.idx))
 
     gsd_file.angles.typeid = angle_typeids
     gsd_file.angles.group = angle_groups
 
     ff_params["angle_coeffs"] = {}
     for angle_type, k, teq in _unique_angle_types:
-        ff_params["angle_coeffs"][angle_type] = {"k": k * 2.0 / ref_energy, "t0": radians(teq)}
+        ff_params["angle_coeffs"][angle_type] = {
+            "k": k * 2.0 / ref_energy,
+            "t0": radians(teq),
+        }
 
 
 def _write_dihedral_information(gsd_file, structure, ff_params, forcefield, ref_energy):
@@ -329,12 +380,20 @@ def _write_dihedral_information(gsd_file, structure, ff_params, forcefield, ref_
         t1, t2 = dihedral.atom1.type, dihedral.atom2.type
         t3, t4 = dihedral.atom3.type, dihedral.atom4.type
         if [t2, t3] == sorted([t2, t3], key=natural_sort):
-            dihedral_type = ('-'.join((t1, t2, t3, t4)))
+            dihedral_type = "-".join((t1, t2, t3, t4))
         else:
-            dihedral_type = ('-'.join((t4, t3, t2, t1)))
-        _dihedral_type = (dihedral_type, dihedral.type.c0,
-        dihedral.type.c1, dihedral.type.c2, dihedral.type.c3, dihedral.type.c4,
-        dihedral.type.c5, dihedral.type.scee, dihedral.type.scnb)
+            dihedral_type = "-".join((t4, t3, t2, t1))
+        _dihedral_type = (
+            dihedral_type,
+            dihedral.type.c0,
+            dihedral.type.c1,
+            dihedral.type.c2,
+            dihedral.type.c3,
+            dihedral.type.c4,
+            dihedral.type.c5,
+            dihedral.type.scee,
+            dihedral.type.scnb,
+        )
         _unique_dihedral_types.add(_dihedral_type)
         unique_dihedral_types.add(dihedral_type)
     unique_dihedral_types = sorted(list(unique_dihedral_types), key=natural_sort)
@@ -346,12 +405,18 @@ def _write_dihedral_information(gsd_file, structure, ff_params, forcefield, ref_
         t1, t2 = dihedral.atom1.type, dihedral.atom2.type
         t3, t4 = dihedral.atom3.type, dihedral.atom4.type
         if [t2, t3] == sorted([t2, t3], key=natural_sort):
-            dihedral_type = ('-'.join((t1, t2, t3, t4)))
+            dihedral_type = "-".join((t1, t2, t3, t4))
         else:
-            dihedral_type = ('-'.join((t4, t3, t2, t1)))
+            dihedral_type = "-".join((t4, t3, t2, t1))
         dihedral_typeids.append(unique_dihedral_types.index(dihedral_type))
-        dihedral_groups.append((dihedral.atom1.idx, dihedral.atom2.idx,
-                                dihedral.atom3.idx, dihedral.atom4.idx))
+        dihedral_groups.append(
+            (
+                dihedral.atom1.idx,
+                dihedral.atom2.idx,
+                dihedral.atom3.idx,
+                dihedral.atom4.idx,
+            )
+        )
 
     gsd_file.dihedrals.typeid = dihedral_typeids
     gsd_file.dihedrals.group = dihedral_groups
@@ -361,4 +426,9 @@ def _write_dihedral_information(gsd_file, structure, ff_params, forcefield, ref_
         opls_coeffs = RB_to_OPLS(c0, c1, c2, c3, c4, c5)
         opls_coeffs /= ref_energy
         k1, k2, k3, k4 = opls_coeffs
-        ff_params["dihedral_coeffs"][dihedral_type] = {"k1": k1, "k2": k2, "k3": k3, "k4": k4}
+        ff_params["dihedral_coeffs"][dihedral_type] = {
+            "k1": k1,
+            "k2": k2,
+            "k3": k3,
+            "k4": k4,
+        }
