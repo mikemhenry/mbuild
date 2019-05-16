@@ -2,20 +2,15 @@ from __future__ import division
 
 import json
 import operator
-import re
-from collections import OrderedDict
-from copy import deepcopy
 from itertools import combinations_with_replacement
-from math import floor, radians, sqrt
+from math import radians, sqrt
 
 import numpy as np
-from oset import oset as OrderedSet
 
-from mbuild import Box
 from mbuild.utils.conversion import RB_to_OPLS
 from mbuild.utils.geometry import coord_shift
 from mbuild.utils.io import import_
-from mbuild.utils.sorting import natural_sort
+from mbuild.utils.sorting import _natural_sort, natural_sort
 
 __all__ = ["write_gsd"]
 
@@ -274,21 +269,22 @@ def _write_bond_information(
     gsd_file.bonds.N = len(structure.bonds)
 
     unique_bond_types = set()
-    _unique_bond_types = set()
     for bond in structure.bonds:
         t1, t2 = bond.atom1.type, bond.atom2.type
         if t1 == "" or t2 == "":
             t1, t2 = bond.atom1.name, bond.atom2.name
         t1, t2 = sorted([t1, t2], key=natural_sort)
         try:
-            _bond_type = ("-".join((t1, t2)), bond.type.k, bond.type.req)
-            bond_type = "-".join((t1, t2))
-            _unique_bond_types.add(_bond_type)
+            bond_type = ("-".join((t1, t2)), bond.type.k, bond.type.req)
+            unique_bond_types.add(bond_type)
         except AttributeError:  # no forcefield applied, bond.type is None
             bond_type = "-".join((t1, t2))
         unique_bond_types.add(bond_type)
-    unique_bond_types = sorted(list(unique_bond_types), key=natural_sort)
-    gsd_file.bonds.types = unique_bond_types
+    unique_bond_types = sorted(list(unique_bond_types), key=_natural_sort)
+    # Don't need the ff parms, just the types
+    gsd_file.bonds.types = [
+        _ if isinstance(_, str) else _[0] for _ in unique_bond_types
+    ]
 
     bond_typeids = []
     bond_groups = []
@@ -301,17 +297,23 @@ def _write_bond_information(
             bond_type = "-".join((t1, t2))
         except AttributeError:  # no forcefield applied, bond.type is None
             bond_type = ("-".join((t1, t2)), 0.0, 0.0)
-        bond_typeids.append(unique_bond_types.index(bond_type))
+        bond_typeids.append(
+            [_ if isinstance(_, str) else _[0] for _ in unique_bond_types].index(
+                bond_type
+            )
+        )
         bond_groups.append((bond.atom1.idx, bond.atom2.idx))
-
     gsd_file.bonds.typeid = bond_typeids
     gsd_file.bonds.group = bond_groups
     ff_params["bond_coeffs"] = {}
-    for bond_type, k, req in _unique_bond_types:
-        ff_params["bond_coeffs"][bond_type] = {
-            "k": k * 2.0 / ref_energy * ref_distance ** 2.0,
-            "r0": req / ref_distance,
-        }
+    for bond_type, k, req in unique_bond_types:
+        try:
+            ff_params["bond_coeffs"][bond_type] = {
+                "k": k * 2.0 / ref_energy * ref_distance ** 2.0,
+                "r0": req / ref_distance,
+            }
+        except (TypeError):  # This means no FF parms for this bond type
+            pass
 
 
 def _write_angle_information(gsd_file, structure, ff_params, forcefield, ref_energy):
