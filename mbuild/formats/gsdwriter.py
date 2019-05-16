@@ -48,8 +48,8 @@ def write_gsd(
     shift_coords : bool, optional, default=True
         Shift coordinates from (0, L) to (-L/2, L/2) if necessary.
     write_special_pairs : bool, optional, default=True
-        Writes out special pair information necessary to correctly use the OPLS fudged 1,4 interactions
-        in HOOMD.
+        Writes out special pair information necessary to correctly use the
+        OPLS fudged 1,4 interactions in HOOMD.
     auto_scale : bool, optional, default=False
         Automatically use largest sigma value as ref_distance, largest mass value
         as ref_mass and largest epsilon value as ref_energy.
