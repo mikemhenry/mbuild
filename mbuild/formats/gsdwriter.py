@@ -96,6 +96,7 @@ def write_gsd(
     # create ff dict
     ff_params = {}
     ff_params["user"] = {}
+    ff_params["objects"] = {}
 
     if structure[0].type == "":
         forcefield = False
@@ -305,12 +306,21 @@ def _write_bond_information(
         bond_groups.append((bond.atom1.idx, bond.atom2.idx))
     gsd_file.bonds.typeid = bond_typeids
     gsd_file.bonds.group = bond_groups
+    ff_params["objects"]["hoomd.md.bond.harmonic"] = {}
     ff_params["bond_coeffs"] = {}
     for bond_type, k, req in unique_bond_types:
         try:
-            ff_params["bond_coeffs"][bond_type] = {
-                "k": k * 2.0 / ref_energy * ref_distance ** 2.0,
-                "r0": req / ref_distance,
+            bond_k = k * 2.0 / ref_energy * ref_distance ** 2.0
+            bond_req = req / ref_distance
+            ff_params["objects"]["hoomd.md.bond.harmonic"] = {
+                "arguments": {"name": bond_type},
+                "tracked_fields": {
+                    "log": True,
+                    "parameters": {
+                        bond_type.split("-")[0]: {"k": bond_k, "r0": bond_req},
+                        bond_type.split("-")[1]: {"k": bond_k, "r0": bond_req},
+                    },
+                },
             }
         except (TypeError):  # This means no FF parms for this bond type
             pass
