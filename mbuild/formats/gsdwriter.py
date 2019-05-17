@@ -346,8 +346,8 @@ def _write_angle_information(gsd_file, structure, ff_params, ref_energy):
     for angle in structure.angles:
         t1, t2, t3 = angle.atom1.type, angle.atom2.type, angle.atom3.type
         t1, t3 = sorted([t1, t3], key=natural_sort)
-        angle_type = ("-".join((t1, t2, t3)), angle.type.k, angle.type.theteq)
-        angle_typeids.append([_[0] for _ in unique_angle_types].index(angle_type[0]))
+        angle_type = "-".join((t1, t2, t3))
+        angle_typeids.append([_[0] for _ in unique_angle_types].index(angle_type))
         angle_groups.append((angle.atom1.idx, angle.atom2.idx, angle.atom3.idx))
 
     gsd_file.angles.typeid = angle_typeids
@@ -379,7 +379,6 @@ def _write_dihedral_information(gsd_file, structure, ff_params, ref_energy):
     gsd_file.dihedrals.N = len(structure.rb_torsions)
 
     unique_dihedral_types = set()
-    _unique_dihedral_types = set()
     for dihedral in structure.rb_torsions:
         t1, t2 = dihedral.atom1.type, dihedral.atom2.type
         t3, t4 = dihedral.atom3.type, dihedral.atom4.type
@@ -387,7 +386,7 @@ def _write_dihedral_information(gsd_file, structure, ff_params, ref_energy):
             dihedral_type = "-".join((t1, t2, t3, t4))
         else:
             dihedral_type = "-".join((t4, t3, t2, t1))
-        _dihedral_type = (
+        dihedral_type = (
             dihedral_type,
             dihedral.type.c0,
             dihedral.type.c1,
@@ -398,10 +397,9 @@ def _write_dihedral_information(gsd_file, structure, ff_params, ref_energy):
             dihedral.type.scee,
             dihedral.type.scnb,
         )
-        _unique_dihedral_types.add(_dihedral_type)
         unique_dihedral_types.add(dihedral_type)
-    unique_dihedral_types = sorted(list(unique_dihedral_types), key=natural_sort)
-    gsd_file.dihedrals.types = unique_dihedral_types
+    unique_dihedral_types = sorted(list(unique_dihedral_types), key=_natural_sort)
+    gsd_file.dihedrals.types = [_[0] for _ in unique_dihedral_types]
 
     dihedral_typeids = []
     dihedral_groups = []
@@ -412,7 +410,9 @@ def _write_dihedral_information(gsd_file, structure, ff_params, ref_energy):
             dihedral_type = "-".join((t1, t2, t3, t4))
         else:
             dihedral_type = "-".join((t4, t3, t2, t1))
-        dihedral_typeids.append(unique_dihedral_types.index(dihedral_type))
+        dihedral_typeids.append(
+            [_[0] for _ in unique_dihedral_types].index(dihedral_type)
+        )
         dihedral_groups.append(
             (
                 dihedral.atom1.idx,
@@ -426,7 +426,7 @@ def _write_dihedral_information(gsd_file, structure, ff_params, ref_energy):
     gsd_file.dihedrals.group = dihedral_groups
 
     ff_params["dihedral_coeffs"] = {}
-    for dihedral_type, c0, c1, c2, c3, c4, c5, scee, scnb in _unique_dihedral_types:
+    for dihedral_type, c0, c1, c2, c3, c4, c5, scee, scnb in unique_dihedral_types:
         opls_coeffs = RB_to_OPLS(c0, c1, c2, c3, c4, c5)
         opls_coeffs /= ref_energy
         k1, k2, k3, k4 = opls_coeffs
