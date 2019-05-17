@@ -128,14 +128,12 @@ def write_gsd(
         _write_pair_information(gsd_file, structure, ff_params, forcefield)
     if structure.bonds:
         _write_bond_information(
-            gsd_file, structure, ff_params, forcefield, ref_distance, ref_energy
+            gsd_file, structure, ff_params, ref_distance, ref_energy
         )
     if structure.angles:
-        _write_angle_information(gsd_file, structure, ff_params, forcefield, ref_energy)
+        _write_angle_information(gsd_file, structure, ff_params, ref_energy)
     if structure.rb_torsions:
-        _write_dihedral_information(
-            gsd_file, structure, ff_params, forcefield, ref_energy
-        )
+        _write_dihedral_information(gsd_file, structure, ff_params, ref_energy)
 
     gsd.hoomd.create(filename, gsd_file)
     # write ff dict
@@ -253,9 +251,7 @@ def _write_pair_information(gsd_file, structure, ff_params, forcefield):
     gsd_file.pairs.N = len(pairs)
 
 
-def _write_bond_information(
-    gsd_file, structure, ff_params, forcefield, ref_distance, ref_energy
-):
+def _write_bond_information(gsd_file, structure, ff_params, ref_distance, ref_energy):
     """Write the bonds in the system.
 
     Parameters
@@ -306,27 +302,23 @@ def _write_bond_information(
         bond_groups.append((bond.atom1.idx, bond.atom2.idx))
     gsd_file.bonds.typeid = bond_typeids
     gsd_file.bonds.group = bond_groups
-    ff_params["objects"]["hoomd.md.bond.harmonic"] = {}
-    ff_params["bond_coeffs"] = {}
+    ff_params["objects"]["hoomd.md.bond.harmonic"] = {
+        "arguments": {"name": "mybond"},
+        "tracked_fields": {"log": True, "parameters": {}},
+    }
+
     for bond_type, k, req in unique_bond_types:
         try:
             bond_k = k * 2.0 / ref_energy * ref_distance ** 2.0
             bond_req = req / ref_distance
-            ff_params["objects"]["hoomd.md.bond.harmonic"] = {
-                "arguments": {"name": bond_type},
-                "tracked_fields": {
-                    "log": True,
-                    "parameters": {
-                        bond_type.split("-")[0]: {"k": bond_k, "r0": bond_req},
-                        bond_type.split("-")[1]: {"k": bond_k, "r0": bond_req},
-                    },
-                },
-            }
+            ff_params["objects"]["hoomd.md.bond.harmonic"]["tracked_fields"][
+                "parameters"
+            ][bond_type] = {"k": bond_k, "r0": bond_req}
         except (TypeError):  # This means no FF parms for this bond type
             pass
 
 
-def _write_angle_information(gsd_file, structure, ff_params, forcefield, ref_energy):
+def _write_angle_information(gsd_file, structure, ff_params, ref_energy):
     """Write the angles in the system.
 
     Parameters
@@ -341,38 +333,35 @@ def _write_angle_information(gsd_file, structure, ff_params, forcefield, ref_ene
     gsd_file.angles.N = len(structure.angles)
 
     unique_angle_types = set()
-    _unique_angle_types = set()
     for angle in structure.angles:
         t1, t2, t3 = angle.atom1.type, angle.atom2.type, angle.atom3.type
         t1, t3 = sorted([t1, t3], key=natural_sort)
-        angle_type = "-".join((t1, t2, t3))
+        angle_type = ("-".join((t1, t2, t3)), angle.type.k, angle.type.theteq)
         unique_angle_types.add(angle_type)
-    unique_angle_types = sorted(list(unique_angle_types), key=natural_sort)
-    gsd_file.angles.types = unique_angle_types
+    unique_angle_types = sorted(list(unique_angle_types), key=_natural_sort)
+    gsd_file.angles.types = [_[0] for _ in unique_angle_types]
 
     angle_typeids = []
     angle_groups = []
     for angle in structure.angles:
         t1, t2, t3 = angle.atom1.type, angle.atom2.type, angle.atom3.type
         t1, t3 = sorted([t1, t3], key=natural_sort)
-        angle_type = "-".join((t1, t2, t3))
-        _angle_type = ("-".join((t1, t2, t3)), angle.type.k, angle.type.theteq)
-        _unique_angle_types.add(_angle_type)
-        angle_typeids.append(unique_angle_types.index(angle_type))
+        angle_type = ("-".join((t1, t2, t3)), angle.type.k, angle.type.theteq)
+        angle_typeids.append([_[0] for _ in unique_angle_types].index(angle_type[0]))
         angle_groups.append((angle.atom1.idx, angle.atom2.idx, angle.atom3.idx))
 
     gsd_file.angles.typeid = angle_typeids
     gsd_file.angles.group = angle_groups
 
     ff_params["angle_coeffs"] = {}
-    for angle_type, k, teq in _unique_angle_types:
+    for angle_type, k, teq in unique_angle_types:
         ff_params["angle_coeffs"][angle_type] = {
             "k": k * 2.0 / ref_energy,
             "t0": radians(teq),
         }
 
 
-def _write_dihedral_information(gsd_file, structure, ff_params, forcefield, ref_energy):
+def _write_dihedral_information(gsd_file, structure, ff_params, ref_energy):
     """Write the dihedrals in the system.
 
     Parameters
