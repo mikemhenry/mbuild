@@ -96,7 +96,9 @@ def write_gsd(
     # create ff dict
     ff_params = {}
     ff_params["user"] = {}
-    ff_params["objects"] = {}
+    ff_params["modules"] = ["hoomd", "md"]
+    ff_params["objects"] = []
+    ff_params["objects"].append({"hoomd.md.nlist.cell": {}})
 
     if structure[0].type == "":
         forcefield = False
@@ -195,8 +197,6 @@ def _write_particle_information(
         pair_coeffs.sort(key=lambda pair_type: pair_type[0])
         ff_params["user"]["pair_coeffs"] = {}
         # We will need these modules
-        ff_params["modules"] = ["hoomd", "md"]
-        ff_params["objects"] = {"hoomd.md.nlist.cell": {}}
         for param_set in pair_coeffs:
             ff_params["user"]["pair_coeffs"][param_set[0]] = {
                 "alpha": 1.0,
@@ -205,14 +205,14 @@ def _write_particle_information(
                 "r_on": R_ON,
                 "sigma": param_set[2] / ref_distance,
             }
-        ff_params["objects"] = {
-            "hoomd.md.pair.lj": {"arguments": {"nlist": "Object #0", "r_cut": R_CUT}}
+        temp_dic = {
+            "hoomd.md.pair.lj": {
+                "arguments": {"nlist": "Object #0", "r_cut": R_CUT},
+                "tracked_fields": {"log": True, "parameters": {}},
+            }
         }
-        ff_params["objects"]["hoomd.md.pair.lj"]["tracked_fields"] = {}
-        ff_params["objects"]["hoomd.md.pair.lj"]["tracked_fields"]["log"] = True
-        ff_params["objects"]["hoomd.md.pair.lj"]["tracked_fields"]["parameters"] = {}
         for A, B in combinations_with_replacement(pair_coeffs, 2):
-            ff_params["objects"]["hoomd.md.pair.lj"]["tracked_fields"]["parameters"][
+            temp_dic["hoomd.md.pair.lj"]["tracked_fields"]["parameters"][
                 "{},{}".format(A[0], B[0])
             ] = {
                 "alpha": 1.0,
@@ -221,6 +221,8 @@ def _write_particle_information(
                 "r_on": R_ON,
                 "sigma": (A[2] / ref_distance + B[2] / ref_distance) / 2,
             }
+
+        ff_params["objects"].append(temp_dic)
 
 
 def _write_pair_information(gsd_file, structure, ff_params, forcefield):
@@ -302,7 +304,8 @@ def _write_bond_information(gsd_file, structure, ff_params, ref_distance, ref_en
         bond_groups.append((bond.atom1.idx, bond.atom2.idx))
     gsd_file.bonds.typeid = bond_typeids
     gsd_file.bonds.group = bond_groups
-    ff_params["objects"]["hoomd.md.bond.harmonic"] = {
+    temp_dic = {}
+    temp_dic["hoomd.md.bond.harmonic"] = {
         "arguments": {"name": "mybond"},
         "tracked_fields": {"log": True, "parameters": {}},
     }
@@ -311,11 +314,12 @@ def _write_bond_information(gsd_file, structure, ff_params, ref_distance, ref_en
         try:
             bond_k = k * 2.0 / ref_energy * ref_distance ** 2.0
             bond_req = req / ref_distance
-            ff_params["objects"]["hoomd.md.bond.harmonic"]["tracked_fields"][
-                "parameters"
-            ][bond_type] = {"k": bond_k, "r0": bond_req}
+            temp_dic["hoomd.md.bond.harmonic"]["tracked_fields"]["parameters"][
+                bond_type
+            ] = {"k": bond_k, "r0": bond_req}
         except (TypeError):  # This means no FF parms for this bond type
             pass
+    ff_params["objects"].append(temp_dic)
 
 
 def _write_angle_information(gsd_file, structure, ff_params, ref_energy):
@@ -352,15 +356,16 @@ def _write_angle_information(gsd_file, structure, ff_params, ref_energy):
 
     gsd_file.angles.typeid = angle_typeids
     gsd_file.angles.group = angle_groups
-
-    ff_params["objects"]["hoomd.md.angle.harmonic"] = {
+    temp_dic = {}
+    temp_dic["hoomd.md.angle.harmonic"] = {
         "tracked_fields": {"log": True, "parameters": {}}
     }
 
     for angle_type, k, teq in unique_angle_types:
-        ff_params["objects"]["hoomd.md.angle.harmonic"]["tracked_fields"]["parameters"][
+        temp_dic["hoomd.md.angle.harmonic"]["tracked_fields"]["parameters"][
             angle_type
         ] = {"k": k * 2.0 / ref_energy, "t0": radians(teq)}
+    ff_params["objects"].append(temp_dic)
 
 
 def _write_dihedral_information(gsd_file, structure, ff_params, ref_energy):
@@ -424,13 +429,16 @@ def _write_dihedral_information(gsd_file, structure, ff_params, ref_energy):
     gsd_file.dihedrals.typeid = dihedral_typeids
     gsd_file.dihedrals.group = dihedral_groups
 
-    ff_params["objects"]["hoomd.md.dihedral.opls"] = {
+    temp_dic = {}
+    temp_dic["hoomd.md.dihedral.opls"] = {
         "tracked_fields": {"log": True, "parameters": {}}
     }
     for dihedral_type, c0, c1, c2, c3, c4, c5, scee, scnb in unique_dihedral_types:
         opls_coeffs = RB_to_OPLS(c0, c1, c2, c3, c4, c5)
         opls_coeffs /= ref_energy
         k1, k2, k3, k4 = opls_coeffs
-        ff_params["objects"]["hoomd.md.dihedral.opls"]["tracked_fields"]["parameters"][
+        temp_dic["hoomd.md.dihedral.opls"]["tracked_fields"]["parameters"][
             dihedral_type
         ] = {"k1": k1, "k2": k2, "k3": k3, "k4": k4}
+
+    ff_params["objects"].append(temp_dic)
