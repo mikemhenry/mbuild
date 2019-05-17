@@ -354,8 +354,7 @@ def _write_angle_information(gsd_file, structure, ff_params, ref_energy):
     gsd_file.angles.group = angle_groups
 
     ff_params["objects"]["hoomd.md.angle.harmonic"] = {
-        "arguments": {"name": "myangle"},
-        "tracked_fields": {"log": True, "parameters": {}},
+        "tracked_fields": {"log": True, "parameters": {}}
     }
 
     for angle_type, k, teq in unique_angle_types:
