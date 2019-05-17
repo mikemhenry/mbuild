@@ -424,14 +424,13 @@ def _write_dihedral_information(gsd_file, structure, ff_params, ref_energy):
     gsd_file.dihedrals.typeid = dihedral_typeids
     gsd_file.dihedrals.group = dihedral_groups
 
-    ff_params["dihedral_coeffs"] = {}
+    ff_params["objects"]["hoomd.md.dihedral.opls"] = {
+        "tracked_fields": {"log": True, "parameters": {}}
+    }
     for dihedral_type, c0, c1, c2, c3, c4, c5, scee, scnb in unique_dihedral_types:
         opls_coeffs = RB_to_OPLS(c0, c1, c2, c3, c4, c5)
         opls_coeffs /= ref_energy
         k1, k2, k3, k4 = opls_coeffs
-        ff_params["dihedral_coeffs"][dihedral_type] = {
-            "k1": k1,
-            "k2": k2,
-            "k3": k3,
-            "k4": k4,
-        }
+        ff_params["objects"]["hoomd.md.dihedral.opls"]["tracked_fields"]["parameters"][
+            dihedral_type
+        ] = {"k1": k1, "k2": k2, "k3": k3, "k4": k4}
