@@ -353,12 +353,15 @@ def _write_angle_information(gsd_file, structure, ff_params, ref_energy):
     gsd_file.angles.typeid = angle_typeids
     gsd_file.angles.group = angle_groups
 
-    ff_params["angle_coeffs"] = {}
+    ff_params["objects"]["hoomd.md.angle.harmonic"] = {
+        "arguments": {"name": "myangle"},
+        "tracked_fields": {"log": True, "parameters": {}},
+    }
+
     for angle_type, k, teq in unique_angle_types:
-        ff_params["angle_coeffs"][angle_type] = {
-            "k": k * 2.0 / ref_energy,
-            "t0": radians(teq),
-        }
+        ff_params["objects"]["hoomd.md.angle.harmonic"]["tracked_fields"]["parameters"][
+            angle_type
+        ] = {"k": k * 2.0 / ref_energy, "t0": radians(teq)}
 
 
 def _write_dihedral_information(gsd_file, structure, ff_params, ref_energy):
