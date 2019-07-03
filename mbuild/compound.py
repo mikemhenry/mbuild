@@ -84,7 +84,17 @@ def load(filename, relative_to_module=None, compound=None, coords_only=False,
     # Handle the case of a xyz file, which must use an internal reader
     extension = os.path.splitext(filename)[-1]
     if extension == '.xyz' and not 'top' in kwargs:
-        compound = read_xyz(filename)
+        if coords_only:
+            tmp = read_xyz(filename)
+            if tmp.n_particles != compound.n_particles:
+                raise ValueError('Number of atoms in {filename} does not match'
+                                 ' {compound}'.format(**locals()))
+            ref_and_compound = zip(tmp._particles(include_ports=False),
+                                   compound.particles(include_ports=False))
+            for ref_particle, particle in ref_and_compound:
+                particle.pos = ref_particle.pos
+        else:
+            compound = read_xyz(filename)
         return compound
 
     if use_parmed:
@@ -1143,7 +1153,95 @@ class Compound(object):
             particle_array = np.array(list(self.particles()))
         return particle_array[idxs]
 
-    def visualize(self, show_ports=False):
+    def visualize(self, show_ports=False, 
+            backend='py3dmol', color_scheme={}): # pragma: no cover
+        """Visualize the Compound using py3dmol (default) or nglview.
+
+        Allows for visualization of a Compound within a Jupyter Notebook.
+
+        Parameters
+        ----------
+        show_ports : bool, optional, default=False
+            Visualize Ports in addition to Particles
+        backend : str, optional, default='py3dmol'
+            Specify the backend package to visualize compounds
+            Currently supported: py3dmol, nglview
+        color_scheme : dict, optional
+            Specify coloring for non-elemental particles
+            keys are strings of the particle names
+            values are strings of the colors
+            i.e. {'_CGBEAD': 'blue'}
+
+        """
+        viz_pkg = {'nglview': self._visualize_nglview,
+                'py3dmol': self._visualize_py3dmol}
+        if run_from_ipython():
+            if backend.lower() in viz_pkg:
+                return viz_pkg[backend.lower()](show_ports=show_ports, 
+                        color_scheme=color_scheme)
+            else:
+                raise RuntimeError("Unsupported visualization " +
+                        "backend ({}). ".format(backend) +
+                        "Currently supported backends include nglview and py3dmol")
+                        
+        else:
+            raise RuntimeError('Visualization is only supported in Jupyter '
+                               'Notebooks.')
+
+    def _visualize_py3dmol(self, show_ports=False, color_scheme={}):
+        """Visualize the Compound using py3Dmol.
+
+        Allows for visualization of a Compound within a Jupyter Notebook.
+
+        Parameters
+        ----------
+        show_ports : bool, optional, default=False
+            Visualize Ports in addition to Particles
+        color_scheme : dict, optional
+            Specify coloring for non-elemental particles
+            keys are strings of the particle names
+            values are strings of the colors
+            i.e. {'_CGBEAD': 'blue'}
+
+
+        Returns
+        ------
+        view : py3Dmol.view
+
+        """
+        py3Dmol = import_('py3Dmol')
+        remove_digits = lambda x: ''.join(i for i in x if not i.isdigit()
+                                              or i == '_')
+
+        modified_color_scheme = {}
+        for name, color in color_scheme.items():
+            # Py3dmol does some element string conversions, 
+            # first character is as-is, rest of the characters are lowercase
+            new_name = name[0] + name[1:].lower() 
+            modified_color_scheme[new_name] = color
+            modified_color_scheme[name] = color
+
+        for particle in self.particles():
+            particle.name = remove_digits(particle.name).upper()
+            if not particle.name:
+                particle.name = 'UNK'
+        tmp_dir = tempfile.mkdtemp()
+        self.save(os.path.join(tmp_dir, 'tmp.mol2'),
+                  show_ports=show_ports,
+                  overwrite=True)
+
+        view = py3Dmol.view()
+        view.addModel(open(os.path.join(tmp_dir, 'tmp.mol2'), 'r').read(),
+                'mol2', keepH=True)
+        view.setStyle({'stick': {'radius': 0.2,
+                                'color':'grey'},
+                        'sphere': {'scale': 0.3,
+                                    'colorscheme':modified_color_scheme}})
+        view.zoomTo()
+
+        return view
+
+    def _visualize_nglview(self, show_ports=False, color_scheme={}):
         """Visualize the Compound using nglview.
 
         Allows for visualization of a Compound within a Jupyter Notebook.
@@ -1152,45 +1250,40 @@ class Compound(object):
         ----------
         show_ports : bool, optional, default=False
             Visualize Ports in addition to Particles
-
-        """
+            """
         nglview = import_('nglview')
         from mdtraj.geometry.sasa import _ATOMIC_RADII
-        if run_from_ipython():
-            remove_digits = lambda x: ''.join(i for i in x if not i.isdigit()
+        remove_digits = lambda x: ''.join(i for i in x if not i.isdigit()
                                               or i == '_')
-            for particle in self.particles():
-                particle.name = remove_digits(particle.name).upper()
-                if not particle.name:
-                    particle.name = 'UNK'
-            tmp_dir = tempfile.mkdtemp()
-            self.save(os.path.join(tmp_dir, 'tmp.mol2'),
-                      show_ports=show_ports,
-                      overwrite=True)
-            widget = nglview.show_file(os.path.join(tmp_dir, 'tmp.mol2'))
-            widget.clear()
-            widget.add_ball_and_stick(cylinderOnly=True)
-            elements = set([particle.name for particle in self.particles()])
-            scale = 50.0
-            for element in elements:
-                try:
-                    widget.add_ball_and_stick('_{}'.format(
-                        element.upper()), aspect_ratio=_ATOMIC_RADII[element.title()]**1.5 * scale)
-                except KeyError:
-                    ids = [str(i) for i, particle in enumerate(self.particles())
-                           if particle.name == element]
-                    widget.add_ball_and_stick(
-                        '@{}'.format(
-                            ','.join(ids)),
-                        aspect_ratio=0.17**1.5 * scale,
-                        color='grey')
-            if show_ports:
-                widget.add_ball_and_stick('_VS',
-                                          aspect_ratio=1.0, color='#991f00')
-            return widget
-        else:
-            raise RuntimeError('Visualization is only supported in Jupyter '
-                               'Notebooks.')
+        for particle in self.particles():
+            particle.name = remove_digits(particle.name).upper()
+            if not particle.name:
+                particle.name = 'UNK'
+        tmp_dir = tempfile.mkdtemp()
+        self.save(os.path.join(tmp_dir, 'tmp.mol2'),
+                  show_ports=show_ports,
+                  overwrite=True)
+        widget = nglview.show_file(os.path.join(tmp_dir, 'tmp.mol2'))
+        widget.clear()
+        widget.add_ball_and_stick(cylinderOnly=True)
+        elements = set([particle.name for particle in self.particles()])
+        scale = 50.0
+        for element in elements:
+            try:
+                widget.add_ball_and_stick('_{}'.format(
+                    element.upper()), aspect_ratio=_ATOMIC_RADII[element.title()]**1.5 * scale)
+            except KeyError:
+                ids = [str(i) for i, particle in enumerate(self.particles())
+                       if particle.name == element]
+                widget.add_ball_and_stick(
+                    '@{}'.format(
+                        ','.join(ids)),
+                    aspect_ratio=0.17**1.5 * scale,
+                    color='grey')
+        if show_ports:
+            widget.add_ball_and_stick('_VS',
+                                      aspect_ratio=1.0, color='#991f00')
+        return widget
 
     def update_coordinates(self, filename, update_port_locations=True):
         """Update the coordinates of this Compound from a file.
@@ -1213,10 +1306,10 @@ class Compound(object):
         """
         if update_port_locations:
             xyz_init = self.xyz
-            load(filename, compound=self, coords_only=True)
+            self = load(filename, compound=self, coords_only=True)
             self._update_port_locations(xyz_init)
         else:
-            load(filename, compound=self, coords_only=True)
+            self = load(filename, compound=self, coords_only=True)
 
     def _update_port_locations(self, initial_coordinates):
         """Adjust port locations after particles have moved
@@ -1445,9 +1538,10 @@ class Compound(object):
 
 
         """
-        from foyer import Forcefield
+        foyer = import_('foyer')
+
         to_parmed = self.to_parmed()
-        ff = Forcefield(forcefield_files=forcefield_files, name=forcefield_name)
+        ff = foyer.Forcefield(forcefield_files=forcefield_files, name=forcefield_name)
         to_parmed = ff.apply(to_parmed)
 
         from simtk.openmm.app.simulation import Simulation
@@ -1639,7 +1733,7 @@ class Compound(object):
     def save(self, filename, show_ports=False, forcefield_name=None,
              forcefield_files=None, forcefield_debug=False, box=None,
              overwrite=False, residues=None, references_file=None,
-             combining_rule='lorentz', **kwargs):
+             combining_rule='lorentz', foyerkwargs={}, **kwargs):
         """Save the Compound to a file.
 
         Parameters
@@ -1678,9 +1772,12 @@ class Compound(object):
             when the `foyer` package is used to apply a forcefield. Valid
             options are 'lorentz' and 'geometric', specifying Lorentz-Berthelot
             and geometric combining rules respectively.
+        
 
         Other Parameters
         ----------------
+        foyerkwargs : dict, optional
+            Specify keyword arguments when applying the foyer Forcefield
         ref_distance : float, optional, default=1.0
             Normalization factor used when saving to .gsd and .hoomdxml formats
             for converting distance values to reduced units.
@@ -1727,10 +1824,11 @@ class Compound(object):
                                    show_ports=show_ports)
         # Apply a force field with foyer if specified
         if forcefield_name or forcefield_files:
-            from foyer import Forcefield
-            ff = Forcefield(forcefield_files=forcefield_files,
-                            name=forcefield_name, debug=forcefield_debug)
-            structure = ff.apply(structure, references_file=references_file)
+            foyer = import_('foyer')
+            ff = foyer.Forcefield(forcefield_files=forcefield_files,
+                                  name=forcefield_name, debug=forcefield_debug)
+            structure = ff.apply(structure, references_file=references_file,
+                    **foyerkwargs)
             structure.combining_rule = combining_rule
 
         total_charge = sum([atom.charge for atom in structure])
@@ -1740,14 +1838,15 @@ class Compound(object):
 
         # Provide a warning if rigid_ids are not sequential from 0
         if self.contains_rigid:
-            unique_rigid_ids = sorted(set([p.rigid_id
-                                           for p in self.rigid_particles()]))
+            unique_rigid_ids = sorted(set([
+                p.rigid_id for p in self.rigid_particles()]))
             if max(unique_rigid_ids) != len(unique_rigid_ids) - 1:
                 warn("Unique rigid body IDs are not sequential starting from zero.")
 
         if saver:  # mBuild supported saver.
             if extension in ['.gsd', '.hoomdxml']:
-                kwargs['rigid_bodies'] = [p.rigid_id for p in self.particles()]
+                kwargs['rigid_bodies'] = [
+                        p.rigid_id for p in self.particles()]
             saver(filename=filename, structure=structure, **kwargs)
         else:  # ParmEd supported saver.
             structure.save(filename, overwrite=overwrite, **kwargs)
@@ -1827,7 +1926,9 @@ class Compound(object):
                 raise ValueError('Number of atoms in {traj} does not match'
                                  ' {self}'.format(**locals()))
             atoms_particles = zip(traj.topology.atoms,
-                                  self._particles(include_ports=False))
+                                  self.particles(include_ports=False))
+            if None in self._particles(include_ports=False):
+                raise ValueError('Some particles are None')
             for mdtraj_atom, particle in atoms_particles:
                 particle.pos = traj.xyz[frame, mdtraj_atom.index]
             return
@@ -2053,7 +2154,9 @@ class Compound(object):
                     ' {self}'.format(
                         **locals()))
             atoms_particles = zip(structure.atoms,
-                                  self._particles(include_ports=False))
+                                  self.particles(include_ports=False))
+            if None in self._particles(include_ports=False):
+                raise ValueError('Some particles are None')
             for parmed_atom, particle in atoms_particles:
                 particle.pos = np.array([parmed_atom.xx,
                                          parmed_atom.xy,
@@ -2092,7 +2195,8 @@ class Compound(object):
         else:
             self.periodicity = np.array([0., 0., 0.])
 
-    def to_parmed(self, box=None, title='', residues=None, show_ports=False):
+    def to_parmed(self, box=None, title='', residues=None, show_ports=False,
+            infer_residues=False):
         """Create a ParmEd Structure from a Compound.
 
         Parameters
@@ -2110,6 +2214,8 @@ class Compound(object):
             checking against Compound.name.
         show_ports : boolean, optional, default=False
             Include all port atoms when converting to a `Structure`.
+        infer_residues : bool, optional, default=False
+            Attempt to assign residues based on names of children.
 
         Returns
         -------
@@ -2125,6 +2231,9 @@ class Compound(object):
         structure.title = title if title else self.name
         atom_mapping = {}  # For creating bonds below
         guessed_elements = set()
+
+        if not residues and infer_residues:
+            residues = list(set([child.name for child in self.children]))
 
         if isinstance(residues, string_types):
             residues = [residues]
@@ -2174,16 +2283,16 @@ class Compound(object):
                 atomic_number = None
                 name = ''.join(char for char in atom.name if not char.isdigit())
                 try:
-                    atomic_number = AtomicNum[atom.name]
+                    atomic_number = AtomicNum[atom.name.capitalize()]
                 except KeyError:
-                    element = element_by_name(atom.name)
+                    element = element_by_name(atom.name.capitalize())
                     if name not in guessed_elements:
                         warn(
                             'Guessing that "{}" is element: "{}"'.format(
                                 atom, element))
                         guessed_elements.add(name)
                 else:
-                    element = atom.name
+                    element = atom.name.capitalize()
 
                 atomic_number = atomic_number or AtomicNum[element]
                 mass = Mass[element]
@@ -2227,7 +2336,48 @@ class Compound(object):
         structure.box = box_vector
         return structure
 
-    def to_intermol(self, molecule_types=None):
+    def to_networkx(self, names_only=False):
+        """Create a NetworkX graph representing the hierarchy of a Compound.
+
+        Parameters
+        ----------
+        names_only : bool, optional, default=False Store only the names of the
+            compounds in the graph. When set to False, the default behavior,
+            the nodes are the compounds themselves.
+
+        Returns
+        -------
+        G : networkx.DiGraph
+        """
+        nx = import_('networkx')
+
+        nodes = list()
+        edges = list()
+        if names_only:
+            nodes.append(self.name)
+        else:
+            nodes.append(self)
+        nodes, edges = self._iterate_children(nodes, edges, names_only=names_only)
+
+        graph = nx.DiGraph()
+        graph.add_nodes_from(nodes)
+        graph.add_edges_from(edges)
+        return graph
+
+    def _iterate_children(self, nodes, edges, names_only=False):
+        if not self.children:
+            return nodes, edges
+        for child in self.children:
+            if names_only:
+                nodes.append(child.name)
+                edges.append([child.parent.name, child.name])
+            else:
+                nodes.append(child)
+                edges.append([child.parent, child])
+            nodes, edges = child._iterate_children(nodes, edges, names_only=names_only)
+        return nodes, edges
+
+    def to_intermol(self, molecule_types=None): # pragma: no cover
         """Create an InterMol system from a Compound.
 
         Parameters
@@ -2280,7 +2430,7 @@ class Compound(object):
         return intermol_system
 
     @staticmethod
-    def _add_intermol_molecule_type(intermol_system, parent):
+    def _add_intermol_molecule_type(intermol_system, parent): # pragma: no cover
         """Create a molecule type for the parent and add bonds. """
         from intermol.moleculetype import MoleculeType
         from intermol.forces.bond import Bond as InterMolBond
@@ -2299,6 +2449,8 @@ class Compound(object):
         if isinstance(selection, integer_types):
             return list(self.particles())[selection]
         if isinstance(selection, string_types):
+            if selection not in self.labels:
+                raise MBuildError('{}[\'{}\'] does not exist.'.format(self.name,selection))
             return self.labels.get(selection)
 
     def __repr__(self):
